@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+# Read-only. Nothing here touches AWS, so no id-token permission is granted.
+# `pull-requests: read` is what paths-filter needs to ask the API which files a PR
+# touched; without it every run fails before a single job is chosen.
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      lambda: ${{ steps.filter.outputs.lambda }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'src/**'
+              - 'public/**'
+              - 'index.html'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
+              - 'tsconfig*.json'
+            lambda:
+              - 'infrastructure/lambdas/**'
+            infra:
+              - 'infrastructure/**'
+
+  app:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:js
+      - run: npm run build
+
+  lambda:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.lambda == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest anthropic boto3
+      - run: python -m pytest infrastructure/lambdas -q
+
+  terraform:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Format
+        run: terraform fmt -check -recursive infrastructure
+      # -backend=false: validation needs no state and therefore no AWS credentials,
+      # which keeps this job unprivileged.
+      - name: Validate
+        run: |
+          cd infrastructure/environments/dev
+          terraform init -backend=false
+          terraform validate

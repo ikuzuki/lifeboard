@@ -1,0 +1,169 @@
+name: Deploy
+
+# Only main. The CI/CD role carries broad permissions, so the set of refs that can
+# reach it is deliberately one branch.
+on:
+  push:
+    branches: [main]
+  # Part of what the client is built from lives in Parameter Store rather than the repo:
+  # the VAPID public key is baked into the bundle at build time, so changing it has no
+  # commit to ride in on and would otherwise need an empty one.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app == 'true' || github.event_name == 'workflow_dispatch' }}
+      infra: ${{ steps.filter.outputs.infra == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'src/**'
+              - 'public/**'
+              - 'index.html'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
+            infra:
+              - 'infrastructure/**'
+
+  # Infrastructure first: a new bucket or distribution has to exist before the app
+  # is uploaded into it.
+  terraform-apply:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - uses: hashicorp/setup-terraform@v3
+
+      # Every lambda that ships a build.sh, rather than a list kept in step by hand. The
+      # bundles are gitignored, so one missing from here fails the apply on a missing
+      # source file rather than quietly deploying something stale.
+      - name: Build the Lambda bundles
+        run: |
+          for script in infrastructure/lambdas/*/build.sh; do
+            [ -f "$script" ] || continue
+            echo "building $script"
+            bash "$script"
+          done
+
+      - name: Terraform Apply
+        # No variables passed in. The environment's configuration is committed as
+        # dev.auto.tfvars and Terraform auto-loads it, so this applies exactly what a
+        # laptop does. The Google credentials come from Parameter Store via auth.tf.
+        run: |
+          cd infrastructure/environments/dev
+          terraform init
+          terraform apply -auto-approve
+
+  deploy-app:
+    needs: [detect-changes, terraform-apply]
+    # `always()` so an app-only change still deploys when terraform-apply was skipped,
+    # but a genuine terraform failure still blocks the upload.
+    if: |
+      always() &&
+      needs.detect-changes.outputs.app == 'true' &&
+      needs.terraform-apply.result != 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Read the client config from Terraform
+        # The state is the only place these values are certainly current. Reading them
+        # here instead of from repository secrets means a re-apply cannot leave the build
+        # pointing at a user pool that no longer exists. None of them are secrets: the
+        # client IDs are public identifiers and session credentials are minted by the
+        # identity pool. Outputs are absent while auth or capture is disabled, so an empty
+        # value is a valid answer and the app falls back to local-only mode.
+        run: |
+          cd infrastructure/environments/dev
+          terraform init -input=false
+          cfg=$(terraform output -json frontend_config)
+          {
+            echo "VITE_AWS_REGION=$(jq -r '.region // ""' <<<"$cfg")"
+            echo "VITE_COGNITO_USER_POOL_ID=$(jq -r '.userPoolId // ""' <<<"$cfg")"
+            echo "VITE_COGNITO_USER_POOL_CLIENT_ID=$(jq -r '.userPoolClientId // ""' <<<"$cfg")"
+            echo "VITE_COGNITO_IDENTITY_POOL_ID=$(jq -r '.identityPoolId // ""' <<<"$cfg")"
+            echo "VITE_COGNITO_DOMAIN=$(jq -r '.hostedUiDomain // ""' <<<"$cfg")"
+            echo "VITE_COGNITO_REDIRECT_URI=$(jq -r '.appUrl // ""' <<<"$cfg")"
+            echo "VITE_SYNC_BUCKET=$(jq -r '.userDataBucket // ""' <<<"$cfg")"
+            echo "VITE_CAPTURE_ENDPOINT=$(terraform output -raw capture_endpoint 2>/dev/null || true)"
+            # The VAPID public key is public by design: it is what the browser hands the push
+            # service to prove which application a subscription belongs to. Terraform only
+            # knows the parameter's name, because the value is filled in out of band, so read
+            # the name from the state and the value from SSM. A parameter still holding the
+            # placeholder is treated as absent, or the app would offer a control that cannot
+            # work. Absent is fine: the app hides it.
+            vapid_name=$(terraform output -raw push_vapid_public_key_parameter 2>/dev/null || true)
+            vapid_key=""
+            if [ -n "$vapid_name" ]; then
+              vapid_key=$(aws ssm get-parameter --name "$vapid_name" --query 'Parameter.Value' --output text 2>/dev/null || true)
+              [ "$vapid_key" = "REPLACE_ME" ] && vapid_key=""
+            fi
+            echo "VITE_VAPID_PUBLIC_KEY=$vapid_key"
+          } >> "$GITHUB_ENV"
+
+      - name: Build
+        # Vite bakes these in at build time, so a change to any of them needs a rebuild
+        # rather than a restart. They arrive via GITHUB_ENV from the step above.
+        run: npm run build
+
+      # Two passes. The hashed assets are immutable and cached for a year; index.html
+      # and the service worker must never be, or a deploy would not reach anyone until
+      # their cache expired.
+      - name: Upload hashed assets
+        run: |
+          aws s3 sync dist/ s3://${{ secrets.APP_BUCKET_NAME }} --delete \
+            --exclude index.html --exclude sw.js --exclude sw-notifications.js --exclude manifest.webmanifest \
+            --cache-control "public,max-age=31536000,immutable"
+
+      - name: Upload the entry points
+        run: |
+          aws s3 sync dist/ s3://${{ secrets.APP_BUCKET_NAME }} \
+            --exclude "*" --include index.html --include sw.js --include sw-notifications.js --include manifest.webmanifest \
+            --cache-control "no-cache"
+
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"

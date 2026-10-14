@@ -1,0 +1,439 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo, monospace;
+
+  /* Seven steps from 11 to 30. Anything between two steps is a decision nobody can
+     see, so there is nothing between two steps. */
+  --text-micro: 11px;
+  --text-micro--line-height: 1.35;
+  --text-meta: 12px;
+  --text-meta--line-height: 1.35;
+  --text-body: 13.5px;
+  --text-body--line-height: 1.45;
+  --text-row: 15px;
+  --text-row--line-height: 1.35;
+  --text-lead: 17.5px;
+  --text-lead--line-height: 1.28;
+  --text-head: 21px;
+  --text-head--line-height: 1.2;
+  --text-display: 30px;
+  --text-display--line-height: 1;
+}
+
+:root {
+  --background: oklch(0.97 0.004 150);
+  --foreground: oklch(0.22 0.015 175);
+  --card: oklch(1 0 0);
+  --muted: oklch(0.94 0.006 150);
+  --muted-foreground: oklch(0.52 0.012 175);
+  --border: oklch(0.86 0.008 150);
+  --accent: oklch(0.47 0.08 180);
+  --accent-foreground: oklch(1 0 0);
+  --radius: 0.75rem;
+
+  /* Lightness values are pinned so that white text clears 4.5:1 on any of them, which
+     is what the active chips and the lead date text rely on. */
+  --now: oklch(0.48 0.16 42);
+  --doing: oklch(0.52 0.12 75);
+  --doing-bg: oklch(0.95 0.03 85);
+  --waiting: oklch(0.5 0.02 220);
+
+  /* Ten category slots. Lightness is pinned so white text clears 4.5:1 on every one,
+     which is what the active filter chip relies on. */
+  --cat-red: oklch(0.49 0.17 15);
+  --cat-orange: oklch(0.49 0.13 55);
+  --cat-yellow: oklch(0.48 0.1 100);
+  --cat-green: oklch(0.47 0.12 160);
+  --cat-teal: oklch(0.48 0.1 195);
+  --cat-blue: oklch(0.48 0.13 230);
+  --cat-indigo: oklch(0.48 0.16 265);
+  --cat-violet: oklch(0.48 0.16 305);
+  --cat-pink: oklch(0.49 0.15 340);
+  --cat-slate: oklch(0.48 0.01 240);
+
+  /* An uncategorised item interpolates this name, so it resolves to a neutral edge
+     instead of an invalid colour. */
+  --cat-null: var(--border);
+
+  /* The default seven by name, for surfaces still reading a hue off a category id. */
+  --cat-health: var(--cat-red);
+  --cat-exercise: var(--cat-green);
+  --cat-career: var(--cat-indigo);
+  --cat-admin: var(--cat-slate);
+  --cat-events: var(--cat-orange);
+  --cat-home: var(--cat-violet);
+  --cat-learning: var(--cat-teal);
+}
+
+.dark {
+  --background: oklch(0.18 0.012 175);
+  --foreground: oklch(0.93 0.006 150);
+  --card: oklch(0.23 0.014 175);
+  --muted: oklch(0.28 0.014 175);
+  --muted-foreground: oklch(0.72 0.01 175);
+  --border: oklch(0.36 0.016 175);
+  --accent: oklch(0.7 0.09 180);
+  --accent-foreground: oklch(0.17 0.02 180);
+
+  --now: oklch(0.75 0.14 50);
+  --doing: oklch(0.78 0.11 80);
+  --doing-bg: oklch(0.3 0.05 80);
+  --waiting: oklch(0.72 0.02 220);
+
+  --cat-red: oklch(0.72 0.13 15);
+  --cat-orange: oklch(0.74 0.11 55);
+  --cat-yellow: oklch(0.77 0.13 100);
+  --cat-green: oklch(0.72 0.11 160);
+  --cat-teal: oklch(0.72 0.09 195);
+  --cat-blue: oklch(0.71 0.11 230);
+  --cat-indigo: oklch(0.71 0.11 265);
+  --cat-violet: oklch(0.72 0.11 305);
+  --cat-pink: oklch(0.72 0.12 340);
+  --cat-slate: oklch(0.7 0.01 240);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* Must be layered. Unlayered rules beat every Tailwind utility, which silently
+   overrode every font-size and font-weight class applied to a button. */
+@layer base {
+  button {
+    font: inherit;
+    color: inherit;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Mono is for figures that want to line up: dates, counts, money. Not for labels. */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+@keyframes tickIn {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.tick-in {
+  animation: tickIn 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes sheet {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.sheet-in {
+  animation: sheet 0.22s ease-out both;
+}
+
+@keyframes toast {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.toast-in {
+  animation: toast 0.18s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick-in,
+  .sheet-in,
+  .toast-in {
+    animation: none;
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.reveal-in {
+  animation: reveal 0.16s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-in {
+    animation: none;
+  }
+  /* Reduced, not removed: the sheet keeps its direction cue without the travel. */
+  .sheet-in {
+    animation: fade 0.12s ease-out both;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Guide illustrations. Every loop is slow enough to read from the middle, and the class
+   defaults are the finished state, so switching the animation off leaves a sensible
+   still picture. */
+
+@keyframes guideSwipeRight {
+  0%,
+  8% {
+    transform: translateX(0);
+  }
+  26%,
+  44% {
+    transform: translateX(66px);
+  }
+  60%,
+  100% {
+    transform: translateX(0);
+  }
+}
+@keyframes guideSwipeLeft {
+  0%,
+  50% {
+    transform: translateX(0);
+  }
+  68%,
+  86% {
+    transform: translateX(-66px);
+  }
+  98%,
+  100% {
+    transform: translateX(0);
+  }
+}
+/* The travel reaches 66px, just past the 64px threshold at which the app fires the
+   action. The still is held shorter, at the point the title still reads whole. */
+.guide-swipe-right {
+  transform: translateX(50px);
+  animation: guideSwipeRight 4s ease-in-out infinite;
+}
+.guide-swipe-left {
+  transform: translateX(-50px);
+  animation: guideSwipeLeft 4s ease-in-out infinite;
+}
+
+@keyframes guideFab {
+  0%,
+  10% {
+    transform: rotate(0deg);
+  }
+  24%,
+  76% {
+    transform: rotate(45deg);
+  }
+  90%,
+  100% {
+    transform: rotate(0deg);
+  }
+}
+@keyframes guideChoice {
+  0%,
+  14% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  30%,
+  72% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  86%,
+  100% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+.guide-fab {
+  transform: rotate(45deg);
+  animation: guideFab 4s ease-in-out infinite;
+}
+.guide-choice {
+  animation: guideChoice 4s ease-in-out infinite;
+}
+
+/* A stroke drawing itself, then clearing while invisible so the loop has no cut. Needs
+   pathLength="1" on the element, which puts the dash units on the same scale everywhere. */
+@keyframes guideDraw {
+  0%,
+  16% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  50%,
+  84% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  94% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+}
+.guide-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: guideDraw 3.4s ease-in-out infinite;
+}
+
+@keyframes guideFlow {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+.guide-flow {
+  stroke-dasharray: 4 4;
+  animation: guideFlow 2s linear infinite;
+}
+
+/* Stepping along the overdue pass and back, so the loop runs both ways. */
+@keyframes guideStepOut {
+  0%,
+  30% {
+    opacity: 1;
+  }
+  42%,
+  74% {
+    opacity: 0;
+  }
+  86%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes guideStepIn {
+  0%,
+  30% {
+    opacity: 0;
+  }
+  42%,
+  74% {
+    opacity: 1;
+  }
+  86%,
+  100% {
+    opacity: 0;
+  }
+}
+.guide-step-out {
+  animation: guideStepOut 4.5s ease-in-out infinite;
+}
+.guide-step-in {
+  opacity: 0;
+  animation: guideStepIn 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-swipe-right,
+  .guide-swipe-left,
+  .guide-fab,
+  .guide-choice,
+  .guide-draw,
+  .guide-flow,
+  .guide-step-out,
+  .guide-step-in {
+    animation: none;
+  }
+}
+
+@layer utilities {
+  /* The category row scrolls horizontally; the bar itself is chrome the design does not
+     want. Both properties are needed: Firefox honours the first, WebKit the second. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer base {
+  /* Android Chrome sizes a date input to its own intrinsic width and clips the year off
+     dd/mm/yyyy. Reserve room for the full value plus the picker icon. */
+  input[type='date'] {
+    min-width: 10.5rem;
+  }
+}
+
+/* A microphone that is live should look live. Paired with the visible Listening line. */
+@keyframes listeningPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.listening-dot {
+  animation: listeningPulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listening-dot {
+    animation: none;
+  }
+}

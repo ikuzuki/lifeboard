@@ -1,0 +1,17 @@
+# Netlify and Cloudflare Pages read this file. Other hosts need the equivalent
+# configuring by hand, see docs/overnight/pwa.md.
+
+# Hashed build output is immutable.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The entry document and the service worker must never be served stale, or a
+# deploy can be pinned to an old bundle indefinitely.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache

@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and fill in real values before `terraform plan`.
+#
+# The two Google values are secrets and must NOT go in this file or in
+# terraform.tfvars, both of which are committed or easily committed by
+# accident. Supply them out of band instead:
+#
+#
+# or put them in secrets.auto.tfvars, which .gitignore excludes.
+
+environment = "dev"
+
+# Set once a hosted zone exists in this account. Leave commented out to run on
+# the *.cloudfront.net address with no ACM certificate and no Route 53 records.
+# domain_name       = "lifeboard.example.co.uk"
+# route53_zone_name = "example.co.uk"
+
+# Globally unique across all AWS accounts. Change if the apply reports a clash.
+user_pool_domain_prefix = "lifeboard-dev"
+
+# Set only if lifeboard-app-dev or lifeboard-user-data-dev is taken.
+# bucket_suffix = "ik"

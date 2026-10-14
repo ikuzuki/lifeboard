@@ -1,0 +1,13 @@
+# boto3 ships in the Lambda runtime, so only the Web Push client is vendored. pywebpush
+# pulls py-vapid, http-ece and cryptography, which between them are the VAPID signing and
+# the aes128gcm payload encryption: hand-rolling either is how a push silently stops
+# arriving on one browser and keeps working on another.
+# Pinned rather than floored: the deployment package is the only lockfile here.
+pywebpush==2.4.0
+
+# Both are pywebpush's own dependencies, pinned here for their own reasons. py-vapid
+# because the handler imports it directly, to read a key in either the PEM or the bare
+# base64url form. http-ece because it is the one package in the tree that publishes no
+# wheel at all; see build.sh for what that costs.
+py-vapid==1.9.4
+http-ece==1.2.1

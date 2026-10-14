@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars and fill in real values before `terraform plan`.
+# Named `.example` so a stray apply in this directory errors out rather than
+# running against placeholder input. Google client id and secret go in
+# environment variables, never here.
+environment             = "prod"
+user_pool_domain_prefix = "lifeboard-prod"

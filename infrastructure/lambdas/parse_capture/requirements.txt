@@ -1,0 +1,3 @@
+# boto3 ships in the Lambda runtime, so only the Anthropic SDK is vendored.
+# Pinned rather than floored: the deployment package is the only lockfile here.
+anthropic==0.89.0

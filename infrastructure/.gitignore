@@ -1,0 +1,16 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Non-secret environment config is committed as dev.auto.tfvars, so a laptop and CI apply
+# the same thing. Only these two are excluded: terraform.tfvars is the personal override
+# file, and secrets.auto.tfvars is reserved for anything that must never be committed. The
+# Google credentials and the Anthropic key are read from Parameter Store, not from tfvars.
+terraform.tfvars
+secrets.auto.tfvars
+
+# Built by data.archive_file at plan time.
+lambdas/**/*.zip
