@@ -58,6 +58,10 @@ module "auth" {
   logout_urls   = local.oauth_redirect_urls
 
   initial_allowlist = var.initial_allowlist
+
+  # Cognito refresh tokens do not roll: one Google sign-in lasts exactly this long. A phone
+  # app opened daily should not drop its sync session every month.
+  refresh_token_validity_days = 365
 }
 
 # -----------------------------------------------------------------------------
