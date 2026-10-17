@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { decodeIdToken, isConfigured, readConfig } from './auth';
+import { decodeIdToken, getAuthState, getCredentials, isConfigured, readConfig, restore } from './auth';
 
 /** Nothing here calls Cognito. The token is fabricated and never verified client side. */
 
@@ -23,7 +23,10 @@ function configure(overrides: Record<string, string> = {}) {
   for (const [key, value] of Object.entries(values)) vi.stubEnv(key, value);
 }
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe('readConfig', () => {
   it('is null when the build carries no Cognito settings, so sync stays inactive', () => {
@@ -84,5 +87,51 @@ describe('decodeIdToken', () => {
     expect(decodeIdToken('not-a-token')).toBeNull();
     expect(decodeIdToken('header..signature')).toBeNull();
     expect(decodeIdToken(fakeIdToken({ email: 'no-subject@example.com' }))).toBeNull();
+  });
+});
+
+describe('an expired session', () => {
+  /** In memory, because the environment provides no usable `localStorage` global. */
+  function storeExpiredSession() {
+    const map = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    });
+    localStorage.setItem(
+      'lifeboard.auth',
+      JSON.stringify({
+        idToken: fakeIdToken({ sub: 'user-1' }),
+        accessToken: 'access',
+        refreshToken: 'refresh',
+        expiresAt: Date.now() - 1000,
+      }),
+    );
+  }
+
+  it('signs out when Cognito refuses the refresh, rather than claiming to be signed in', async () => {
+    configure();
+    storeExpiredSession();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 400 })));
+
+    await restore();
+    expect(getAuthState().status).toBe('signed-in');
+
+    expect(await getCredentials()).toBeNull();
+    expect(getAuthState().status).toBe('signed-out');
+    expect(getAuthState().error).toMatch(/sign in again/i);
+    expect(localStorage.getItem('lifeboard.auth')).toBeNull();
+  });
+
+  it('keeps the session through a network failure, which may pass', async () => {
+    configure();
+    storeExpiredSession();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    await restore();
+    expect(await getCredentials()).toBeNull();
+    expect(getAuthState().status).toBe('error');
+    expect(localStorage.getItem('lifeboard.auth')).not.toBeNull();
   });
 });

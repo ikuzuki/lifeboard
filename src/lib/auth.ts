@@ -152,12 +152,18 @@ interface TokenResponse {
   expires_in?: number;
 }
 
+/** The token endpoint refused the grant itself, as it does once a refresh token expires. */
+class TokenRejected extends Error {}
+
 async function postToken(config: AuthConfig, body: Record<string, string>): Promise<Tokens> {
   const response = await fetch(`${config.domain}/oauth2/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: config.clientId, ...body }).toString(),
   });
+  if (response.status === 400 || response.status === 401) {
+    throw new TokenRejected(`Cognito token endpoint returned ${response.status}`);
+  }
   if (!response.ok) throw new Error(`Cognito token endpoint returned ${response.status}`);
   const json = (await response.json()) as TokenResponse;
   if (!json.id_token) throw new Error('Cognito returned no identity token');
@@ -279,6 +285,13 @@ async function freshIdToken(): Promise<{ config: AuthConfig; idToken: string } |
     writeTokens(refreshed);
     return { config, idToken: refreshed.idToken };
   } catch (error) {
+    // A refused refresh will be refused on every retry, so the stored session is dead. Left
+    // in place, the app keeps reporting signed-in while sync quietly does nothing.
+    if (error instanceof TokenRejected) {
+      signOut();
+      setState({ error: 'Your session expired. Sign in again to keep syncing.' });
+      return null;
+    }
     setState({ status: 'error', error: message(error) });
     return null;
   }

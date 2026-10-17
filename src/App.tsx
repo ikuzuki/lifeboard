@@ -5,7 +5,7 @@ import { QuickAdd } from './components/QuickAdd';
 import { BrainDump } from './components/BrainDump';
 import { AddMenu, type AddChoice } from './components/AddMenu';
 import { applyUpdate, getPwaStatus, subscribeToPwa } from './lib/pwa';
-import { restore } from './lib/auth';
+import { isConfigured, restore, useAuth } from './lib/auth';
 import { captureConfigured } from './lib/capture';
 import { ArchiveView } from './views/ArchiveView';
 import { SettingsView } from './views/SettingsView';
@@ -16,7 +16,7 @@ import { TodayView } from './views/TodayView';
 import { Screen } from './components/Screen';
 import { StoreContext, reducer } from './store';
 import { initStorage, persist, requestPersistence } from './lib/storage';
-import { startSync } from './lib/sync';
+import { startSync, useSync } from './lib/sync';
 import type { State } from './types';
 import { chime } from './lib/feedback';
 import type { Category, Day, Goal, Item } from './types';
@@ -111,6 +111,15 @@ function Shell({ initial }: { initial: State }) {
   // installed app would keep serving the build it precached and never take a deploy.
   const { updateReady } = useSyncExternalStore(subscribeToPwa, getPwaStatus, getPwaStatus);
   const [announcement, setAnnouncement] = useState('');
+  const auth = useAuth();
+  const { lastSyncedAt } = useSync();
+  // A device that has synced before and is no longer signed in is holding the only copy of
+  // every edit since. Said on the main screen, because Settings is not where anyone looks.
+  const syncLapsed =
+    isConfigured() &&
+    lastSyncedAt !== null &&
+    auth.status !== 'signed-in' &&
+    auth.status !== 'signing-in';
   const undoTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => persist(state), [state]);
@@ -237,6 +246,24 @@ function Shell({ initial }: { initial: State }) {
             </button>
           </div>
         </header>
+
+        {syncLapsed && (
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-2 border-b px-4 py-1 text-meta"
+            style={{ borderColor: 'var(--border)', color: 'var(--now)' }}
+          >
+            <span>Sync is off on this device.</span>
+            <button
+              type="button"
+              onClick={auth.signIn}
+              className="min-h-11 rounded-full px-4 font-semibold"
+              style={{ background: 'var(--accent)', color: 'var(--accent-foreground)' }}
+            >
+              Sign in
+            </button>
+          </div>
+        )}
 
         <main id="main" className="flex-1 px-4 pt-3 pb-10">
           {tab === 'today' && (
